@@ -1,4 +1,4 @@
-# filex
+# filedex
 Google search for your file system. Made at NWHacks 2026.
 A local service that indexes and analyses a directory so that users can search a variety of files semantically based on document content (ex: `.txt`, `.docx` `.c`) and also image content (`.png`, `.jpg`, `.webp`). 
 It uses a combination of text embeddings, large language models, and computer vision to generate its metadata to track files. 
