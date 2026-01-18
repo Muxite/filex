@@ -106,8 +106,11 @@ class Repository:
         self.logger.info(f"Creating new repository at: {repo_path}")
         repo_path.mkdir(parents=True, exist_ok=True)
         
-        config = self._setup_config()
-        for directory in [config.index_dir, config.embeddings_dir, config.metadata_dir]:
+        index_dir = repo_path / self.INDEX_DIR_NAME
+        embeddings_dir = repo_path / self.EMBEDDINGS_DIR_NAME
+        metadata_dir = repo_path / self.METADATA_DIR_NAME
+        
+        for directory in [index_dir, embeddings_dir, metadata_dir]:
             directory.mkdir(parents=True, exist_ok=True)
             self.logger.debug(f"Created directory: {directory}")
         

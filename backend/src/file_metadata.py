@@ -19,6 +19,7 @@ class FileMetadata:
     file_extension: str
     file_size_bytes: int
     is_text_type: bool
+    is_image_type: bool
     modified_time: Optional[datetime] = None
     created_time: Optional[datetime] = None
     
@@ -42,7 +43,9 @@ class FileMetadata:
         stat = path.stat()
         extension = path.suffix.lower()
         text_extensions = {'.txt', '.docx'}
+        image_extensions = {'.png', '.jpg', '.jpeg'}
         is_text = extension in text_extensions
+        is_image = extension in image_extensions
         
         metadata = cls(
             file_path=str(path.resolve()),
@@ -50,13 +53,14 @@ class FileMetadata:
             file_extension=extension,
             file_size_bytes=stat.st_size,
             is_text_type=is_text,
+            is_image_type=is_image,
             modified_time=datetime.fromtimestamp(stat.st_mtime),
             created_time=datetime.fromtimestamp(stat.st_ctime),
         )
         
         logger.info(
             f"Metadata collected: {metadata.file_name} "
-            f"({metadata.file_size_kb:.2f} KB, type: {extension}, text: {is_text})"
+            f"({metadata.file_size_kb:.2f} KB, type: {extension}, text: {is_text}, image: {is_image})"
         )
         return metadata
     

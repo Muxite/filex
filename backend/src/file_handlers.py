@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 from .file_metadata import FileMetadata
-from .embedding.handler import TextEmbeddingHandler
+from .handler import TextEmbeddingHandler
 from .logger import get_logger
 
 

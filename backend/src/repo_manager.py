@@ -4,12 +4,14 @@ Repository manager that coordinates indexing and file tracking.
 import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+import numpy as np
+from tqdm import tqdm
 
 from .repository import Repository
 from .index_manager import IndexManager, FileIndexEntry
 from .storage_manager import StorageManager
+from .search_manager import SearchManager
 from .file_processor import FileProcessorRouter
-from .file_metadata import FileMetadata
 from .logger import get_logger
 
 
@@ -39,6 +41,7 @@ class RepositoryManager:
         self.repository = Repository(start_path=start_path, create=create)
         self.index_manager = IndexManager(self.repository)
         self.storage_manager = StorageManager(self.repository)
+        self.search_manager = SearchManager(self.repository)
         self.processor = processor
         
         self.logger.info("RepositoryManager initialized")
@@ -76,6 +79,7 @@ class RepositoryManager:
         if not self.repository.is_path_in_repo(str(file_path)):
             self.logger.warning(f"File outside repository: {file_path}")
         
+        from .file_metadata import FileMetadata
         metadata = FileMetadata.from_path(str(file_path))
         
         if not force and not self.index_manager.has_changed(metadata):
@@ -109,8 +113,10 @@ class RepositoryManager:
         
         if result.get("processed", False):
             embeddings = None
+            chunks = None
             if "embeddings" in result and isinstance(result["embeddings"], dict):
                 embeddings = result["embeddings"].get("embeddings")
+                chunks = result["embeddings"].get("chunks")
             
             if embeddings is not None:
                 self.storage_manager.save_processing_result(
@@ -118,6 +124,34 @@ class RepositoryManager:
                     result,
                     embeddings=embeddings,
                 )
+                
+                if chunks is not None and isinstance(chunks, list) and len(chunks) > 0:
+                    if isinstance(embeddings, np.ndarray):
+                        self.logger.info(
+                            f"Adding {len(chunks)} chunks to search index for: {Path(file_path).name}"
+                        )
+                        try:
+                            self.search_manager.add_file_embeddings(
+                                str(file_path),
+                                chunks,
+                                embeddings,
+                            )
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to add embeddings to search index for {Path(file_path).name}: {e}",
+                                exc_info=True
+                            )
+                    else:
+                        self.logger.warning(
+                            f"Embeddings for {Path(file_path).name} are not numpy array, "
+                            f"type: {type(embeddings)}"
+                        )
+                else:
+                    if result.get("processed", False):
+                        self.logger.warning(
+                            f"No chunks found for {Path(file_path).name}, "
+                            f"chunks type: {type(chunks)}, chunks value: {chunks}"
+                        )
         
         return {
             "file_path": str(file_path),
@@ -162,11 +196,15 @@ class RepositoryManager:
         if recursive:
             for file_path in directory.rglob("*"):
                 if file_path.is_file():
+                    if ".filex" in file_path.parts:
+                        continue
                     if extensions is None or file_path.suffix.lower() in [e.lower() for e in extensions]:
                         files_to_index.append(file_path)
         else:
             for file_path in directory.iterdir():
                 if file_path.is_file():
+                    if ".filex" in file_path.parts:
+                        continue
                     if extensions is None or file_path.suffix.lower() in [e.lower() for e in extensions]:
                         files_to_index.append(file_path)
         
@@ -179,19 +217,25 @@ class RepositoryManager:
         error_count = 0
         errors = []
         
-        for i, file_path in enumerate(files_to_index, 1):
-            try:
-                self.logger.debug(f"Processing {i}/{len(files_to_index)}: {file_path.name}")
-                result = self.index_file(str(file_path), force=force)
-                if result.get("indexed"):
-                    indexed_count += 1
-                else:
-                    skipped_count += 1
-            except Exception as e:
-                error_count += 1
-                error_msg = f"{file_path}: {str(e)}"
-                errors.append(error_msg)
-                self.logger.error(f"Error indexing {file_path}: {e}", exc_info=True)
+        with tqdm(total=len(files_to_index), desc="Indexing files", unit="file") as pbar:
+            for file_path in files_to_index:
+                try:
+                    pbar.set_description(f"Indexing: {file_path.name}")
+                    result = self.index_file(str(file_path), force=force)
+                    if result.get("indexed"):
+                        indexed_count += 1
+                        pbar.set_postfix({"indexed": indexed_count, "skipped": skipped_count})
+                    else:
+                        skipped_count += 1
+                        pbar.set_postfix({"indexed": indexed_count, "skipped": skipped_count})
+                except Exception as e:
+                    error_count += 1
+                    error_msg = f"{file_path}: {str(e)}"
+                    errors.append(error_msg)
+                    self.logger.error(f"Error indexing {file_path}: {e}", exc_info=True)
+                    pbar.set_postfix({"indexed": indexed_count, "errors": error_count})
+                finally:
+                    pbar.update(1)
         
         stats = {
             "total_files": len(files_to_index),

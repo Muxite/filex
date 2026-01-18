@@ -152,6 +152,15 @@ class IndexManager:
         
         return sha256.hexdigest()
     
+    def _compute_file_hash(self, file_path: str) -> str:
+        """
+        Compute SHA256 hash of file contents (instance method wrapper).
+        
+        :param file_path: Path to file
+        :returns: Hex digest of file hash
+        """
+        return self.compute_file_hash(file_path)
+    
     def is_indexed(self, file_path: str) -> bool:
         """
         Check if a file is in the index.

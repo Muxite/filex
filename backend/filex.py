@@ -6,12 +6,14 @@ import sys
 from pathlib import Path
 from typing import Tuple
 
-from src.filex.embedding import (
+from src import (
     RepositoryManager,
     FileProcessorRouter,
     TextFileHandler,
+    ImageFileHandler,
     TextEmbeddingHandler,
     SentenceTransformerEmbedder,
+    CLIPImageEmbedder,
     FixedSizeChunker,
     SearchManager,
 )
@@ -58,7 +60,10 @@ def parse_search_query(query_string: str) -> Tuple[str, int]:
     return query_text, count
 
 
-def setup_components(model_name: str = "all-mpnet-base-v2") -> Tuple[RepositoryManager, TextEmbeddingHandler]:
+def setup_components(
+    model_name: str = "all-mpnet-base-v2",
+    image_model_name: str = "openai/clip-vit-base-patch32"
+) -> Tuple[RepositoryManager, TextEmbeddingHandler]:
     """
     Set up FileX components with default configuration.
     
@@ -66,15 +71,24 @@ def setup_components(model_name: str = "all-mpnet-base-v2") -> Tuple[RepositoryM
     Subsequent runs are faster due to model caching.
     
     :param model_name: Sentence-transformer model name (default: all-mpnet-base-v2, 768 dimensions)
+    :param image_model_name: CLIP model name for images (default: openai/clip-vit-base-patch32, 512 dimensions)
     :returns: Tuple of (RepositoryManager, TextEmbeddingHandler)
     """
-    print("Loading embedding model (this may take a few seconds)...")
+    print("Loading embedding models (this may take a few seconds)...")
     embedder = SentenceTransformerEmbedder(model_name=model_name)
     chunker = FixedSizeChunker(chunk_size=512, overlap=50)
     embedding_handler = TextEmbeddingHandler(embedder=embedder, chunker=chunker)
     
     text_handler = TextFileHandler(embedding_handler=embedding_handler)
-    processor = FileProcessorRouter(text_handler=text_handler)
+    
+    try:
+        image_embedder = CLIPImageEmbedder(model_name=image_model_name)
+        image_handler = ImageFileHandler(image_embedder=image_embedder)
+        processor = FileProcessorRouter(text_handler=text_handler, image_handler=image_handler)
+    except Exception as e:
+        print(f"Warning: Could not initialize image handler: {e}")
+        print("Image support will be disabled. Text files will still work.")
+        processor = FileProcessorRouter(text_handler=text_handler)
     
     repo_manager = RepositoryManager(processor=processor, create=True)
     
@@ -196,7 +210,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     :returns: Exit code (0 for success, non-zero for error)
     """
     try:
-        from src.filex.embedding import Repository, IndexManager, StorageManager, SearchManager
+        from src import Repository, IndexManager, StorageManager, SearchManager
         
         repository = Repository(create=False)
         index_manager = IndexManager(repository)

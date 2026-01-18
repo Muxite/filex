@@ -5,7 +5,8 @@ from typing import List, Optional, Dict, Any
 
 from .file_metadata import FileMetadata
 from .file_handlers import FileHandler, TextFileHandler, DefaultFileHandler
-from .embedding.handler import TextEmbeddingHandler
+from .image_handlers import ImageFileHandler
+from .handler import TextEmbeddingHandler
 from .logger import get_logger
 
 
@@ -19,22 +20,28 @@ class FileProcessorRouter:
     def __init__(
         self,
         text_handler: Optional[TextFileHandler] = None,
+        image_handler: Optional[ImageFileHandler] = None,
         default_handler: Optional[DefaultFileHandler] = None
     ):
         """
         Initialize file processor router with handlers.
         
         :param text_handler: Handler for text files (optional, will use default if None)
+        :param image_handler: Handler for image files (optional)
         :param default_handler: Handler for unsupported file types (optional, will create default if None)
         """
         self.logger = get_logger(__name__)
         self.text_handler = text_handler
+        self.image_handler = image_handler
         self.default_handler = default_handler or DefaultFileHandler()
         
         self._handlers: List[FileHandler] = []
         if self.text_handler:
             self._handlers.append(self.text_handler)
             self.logger.debug("TextFileHandler registered")
+        if self.image_handler:
+            self._handlers.append(self.image_handler)
+            self.logger.debug("ImageFileHandler registered")
         self._handlers.append(self.default_handler)
         self.logger.debug("DefaultFileHandler registered")
         self.logger.info(f"FileProcessorRouter initialized with {len(self._handlers)} handler(s)")
@@ -53,6 +60,22 @@ class FileProcessorRouter:
         if self.text_handler not in self._handlers:
             self._handlers.insert(0, self.text_handler)
         self.logger.info("Text file handler updated")
+    
+    def set_image_handler(self, image_handler: ImageFileHandler) -> None:
+        """
+        Set or change the image file handler.
+        
+        :param image_handler: The image file handler (must not be None)
+        """
+        if image_handler is None:
+            self.logger.error("image_handler cannot be None")
+            raise ValueError("image_handler cannot be None")
+        
+        self.image_handler = image_handler
+        if self.image_handler not in self._handlers:
+            insert_pos = len([h for h in self._handlers if isinstance(h, TextFileHandler)])
+            self._handlers.insert(insert_pos, self.image_handler)
+        self.logger.info("Image file handler updated")
     
     def process_file(self, file_path: str) -> Dict[str, Any]:
         """
