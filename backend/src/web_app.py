@@ -554,66 +554,96 @@ async def search_files(request: SearchRequest):
     """
     Search indexed files.
     
+    Searches both text and image indices simultaneously and returns unified results
+    ranked by similarity score. Both text and images are searched by default.
+    
     :param request: Search request parameters
-    :returns: Search results with file locations and text
+    :returns: Search results with file locations and text, mixed from both text and images
     """
+    logger.info(f"POST /api/search - Query: '{request.query}', top_k: {request.top_k}")
     try:
         repo_manager = state.get_repo_manager(request.repo_path)
         search_manager = repo_manager.search_manager
         
         if state.text_embedding_handler is None:
+            logger.error("Text embedding handler not initialized")
             raise HTTPException(status_code=500, detail="Text embedding handler not initialized")
         
+        logger.info("Generating text query embedding...")
         _, query_embedding = state.text_embedding_handler.embed_text(request.query)
         if query_embedding.ndim > 1 and query_embedding.shape[0] == 1:
             query_embedding = query_embedding[0]
+        logger.debug(f"Text query embedding shape: {query_embedding.shape}")
         
         image_query_embedding = None
         if state.image_embedder is not None:
             try:
+                logger.info("Generating image query embedding...")
                 image_query_embedding = state.image_embedder.embed_text(request.query)
+                logger.debug(f"Image query embedding shape: {image_query_embedding.shape}")
             except Exception as e:
                 logger.warning(f"Failed to generate image query embedding: {e}")
+        else:
+            logger.info("Image embedder not available, searching text only")
         
+        logger.info(f"Performing unified search (text + images)...")
         results = search_manager.search(
             query_embedding,
             top_k=request.top_k,
             image_query_embedding=image_query_embedding,
         )
+        logger.info(f"Search completed: {len(results)} results found")
         
         formatted_results = []
+        text_count = 0
+        image_count = 0
+        
         for result in results:
+            file_path = Path(result.file_path)
+            is_image = file_path.suffix.lower() in {'.png', '.jpg', '.jpeg'}
+            
+            if is_image:
+                image_count += 1
+            else:
+                text_count += 1
+            
             result_data = {
                 "file_path": result.file_path,
                 "file_name": result.file_name,
                 "chunk_index": result.chunk_index,
                 "chunk_text": result.chunk_text,
                 "similarity_score": float(result.similarity_score),
+                "is_image": is_image,
             }
             
-            if request.include_images:
-                file_path = Path(result.file_path)
-                if file_path.exists() and file_path.suffix.lower() in {'.png', '.jpg', '.jpeg'}:
+            if request.include_images and is_image:
+                if file_path.exists():
                     file_size_mb = file_path.stat().st_size / (1024 * 1024)
                     if file_size_mb <= request.max_image_size_mb:
                         try:
+                            logger.debug(f"Loading image data for: {result.file_name}")
                             with open(file_path, 'rb') as f:
                                 image_data = f.read()
                                 image_base64 = base64.b64encode(image_data).decode('utf-8')
                                 result_data["image_data"] = f"data:image/{file_path.suffix[1:]};base64,{image_base64}"
                                 result_data["image_size_mb"] = file_size_mb
                         except Exception as e:
+                            logger.warning(f"Failed to load image data for {result.file_name}: {e}")
                             result_data["image_error"] = str(e)
             
             formatted_results.append(result_data)
         
+        logger.info(f"Returning {len(formatted_results)} results (text: {text_count}, images: {image_count})")
         return {
             "query": request.query,
             "results": formatted_results,
             "count": len(formatted_results)
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 @app.post("/api/stats")
