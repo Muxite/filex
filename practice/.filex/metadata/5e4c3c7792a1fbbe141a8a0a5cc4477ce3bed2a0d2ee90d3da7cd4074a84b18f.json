@@ -1,0 +1,15 @@
+{
+  "file_path": "C:\\Users\\mukch\\projects\\filex\\practice\\data\\stats.txt",
+  "file_name": "stats.txt",
+  "file_extension": ".txt",
+  "file_size_bytes": 317,
+  "file_size_kb": 0.3095703125,
+  "file_size_mb": 0.00030231475830078125,
+  "modified_time": "2026-01-18T03:56:27.971492",
+  "created_time": "2026-01-18T03:55:12.508942",
+  "embeddings_info": {
+    "num_chunks": 1,
+    "embedding_dimension": 768
+  },
+  "processed": true
+}

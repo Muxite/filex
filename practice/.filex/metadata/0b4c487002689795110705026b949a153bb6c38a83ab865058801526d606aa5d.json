@@ -1,0 +1,15 @@
+{
+  "file_path": "C:\\Users\\mukch\\projects\\filex\\practice\\data\\info.txt",
+  "file_name": "info.txt",
+  "file_extension": ".txt",
+  "file_size_bytes": 286,
+  "file_size_kb": 0.279296875,
+  "file_size_mb": 0.0002727508544921875,
+  "modified_time": "2026-01-18T03:56:27.970491",
+  "created_time": "2026-01-18T03:55:11.490660",
+  "embeddings_info": {
+    "num_chunks": 1,
+    "embedding_dimension": 768
+  },
+  "processed": true
+}

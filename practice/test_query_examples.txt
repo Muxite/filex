@@ -1,0 +1,12 @@
+Test Query Examples for FileX
+
+Use these queries to test the search functionality:
+
+1. "types of fruits" - Should find sample1.txt
+2. "programming languages" - Should find sample2.txt
+3. "cooking techniques" - Should find sample3.txt
+4. "data processing" - Should find data/info.txt
+5. "statistics" - Should find data/stats.txt
+6. "meeting notes" - Should find documents/notes.txt
+
+Try variations and see how semantic search works!

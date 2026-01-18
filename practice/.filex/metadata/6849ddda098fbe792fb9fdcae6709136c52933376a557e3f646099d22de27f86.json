@@ -1,0 +1,15 @@
+{
+  "file_path": "C:\\Users\\mukch\\projects\\filex\\practice\\sample2.txt",
+  "file_name": "sample2.txt",
+  "file_extension": ".txt",
+  "file_size_bytes": 1161,
+  "file_size_kb": 1.1337890625,
+  "file_size_mb": 0.0011072158813476562,
+  "modified_time": "2026-01-18T03:56:27.968494",
+  "created_time": "2026-01-18T03:55:05.492370",
+  "embeddings_info": {
+    "num_chunks": 3,
+    "embedding_dimension": 768
+  },
+  "processed": true
+}
