@@ -4,7 +4,7 @@ FileX CLI entrypoint for indexing and searching files.
 import argparse
 import sys
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
 from src import (
     RepositoryManager,
@@ -63,7 +63,7 @@ def parse_search_query(query_string: str) -> Tuple[str, int]:
 def setup_components(
     model_name: str = "all-mpnet-base-v2",
     image_model_name: str = "openai/clip-vit-base-patch32"
-) -> Tuple[RepositoryManager, TextEmbeddingHandler]:
+) -> Tuple[RepositoryManager, TextEmbeddingHandler, Optional[CLIPImageEmbedder]]:
     """
     Set up FileX components with default configuration.
     
@@ -72,7 +72,7 @@ def setup_components(
     
     :param model_name: Sentence-transformer model name (default: all-mpnet-base-v2, 768 dimensions)
     :param image_model_name: CLIP model name for images (default: openai/clip-vit-base-patch32, 512 dimensions)
-    :returns: Tuple of (RepositoryManager, TextEmbeddingHandler)
+    :returns: Tuple of (RepositoryManager, TextEmbeddingHandler, CLIPImageEmbedder or None)
     """
     print("Loading embedding models (this may take a few seconds)...")
     embedder = SentenceTransformerEmbedder(model_name=model_name)
@@ -81,6 +81,7 @@ def setup_components(
     
     text_handler = TextFileHandler(embedding_handler=embedding_handler)
     
+    image_embedder = None
     try:
         image_embedder = CLIPImageEmbedder(model_name=image_model_name)
         image_handler = ImageFileHandler(image_embedder=image_embedder)
@@ -92,7 +93,7 @@ def setup_components(
     
     repo_manager = RepositoryManager(processor=processor, create=True)
     
-    return repo_manager, embedding_handler
+    return repo_manager, embedding_handler, image_embedder
 
 
 def cmd_index(args: argparse.Namespace) -> int:
@@ -165,7 +166,7 @@ def cmd_search(args: argparse.Namespace) -> int:
     try:
         print("Initializing FileX...")
         model_name = args.model if hasattr(args, 'model') and args.model else "all-mpnet-base-v2"
-        repo_manager, embedding_handler = setup_components(model_name=model_name)
+        repo_manager, embedding_handler, image_embedder = setup_components(model_name=model_name)
         search_manager = repo_manager.search_manager
         
         query_text, count = parse_search_query(args.query)
@@ -179,7 +180,16 @@ def cmd_search(args: argparse.Namespace) -> int:
         if query_embedding.ndim > 1 and query_embedding.shape[0] == 1:
             query_embedding = query_embedding[0]
         
-        results = search_manager.search(query_embedding, top_k=count)
+        image_query_embedding = None
+        if image_embedder is not None:
+            try:
+                image_query_embedding = image_embedder.embed_text(query_text)
+                if image_query_embedding.ndim > 1:
+                    image_query_embedding = image_query_embedding.flatten()
+            except Exception as e:
+                print(f"Warning: Could not create image query embedding: {e}")
+        
+        results = search_manager.search(query_embedding, top_k=count, image_query_embedding=image_query_embedding)
         
         if not results:
             print("No results found.")

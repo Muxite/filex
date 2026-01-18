@@ -183,7 +183,7 @@ function AppContent() {
     setIsSearching(true);
     setShowSearchResults(true);
     try {
-      const results = await dataService.searchFiles(searchQuery, currentDir, 10, false);
+      const results = await dataService.searchFiles(searchQuery, currentDir, 10, true);
       setSearchResults(results);
     } catch (error) {
       console.error("Error searching:", error);
