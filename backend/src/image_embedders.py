@@ -119,3 +119,26 @@ class CLIPImageEmbedder:
             f"dimension {embeddings.shape[1] if len(embeddings.shape) > 1 else embeddings.shape[0]}"
         )
         return embeddings
+    
+    def embed_text(self, text: str) -> np.ndarray:
+        """
+        Generate embedding vector for text using CLIP's text encoder.
+        
+        This enables cross-modal search where text queries can find images.
+        
+        :param text: Text string to embed
+        :returns: A 1D numpy array representing the text embedding vector (same space as images)
+        :raises ValueError: If text is empty
+        """
+        if not text:
+            self.logger.error("Cannot embed empty text")
+            raise ValueError("text cannot be empty")
+        
+        with torch.no_grad():
+            inputs = self.processor(text=text, return_tensors="pt", padding=True, truncation=True).to(self.device)
+            text_features = self.model.get_text_features(**inputs)
+            text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
+            embedding = text_features.cpu().numpy().flatten()
+        
+        self.logger.debug(f"Generated text embedding with dimension {embedding.shape[0]}")
+        return embedding

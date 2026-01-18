@@ -33,12 +33,13 @@ Press `Ctrl+C` in the terminal where the server is running. The server will clea
 
 ### 1. List Repositories
 
-**GET** `/api/repositories?start_path=...`
+**GET** `/api/repositories?scan=true&start_path=...`
 
-List all available `.filex` repositories.
+List all available `.filex` repositories from the registry. The registry automatically saves discovered repositories and persists them across server restarts.
 
 **Query Parameters**:
-- `start_path` (optional): Starting path for search (default: current directory)
+- `scan` (optional): Whether to scan for new repositories (default: false). When true, scans the filesystem and adds any newly discovered repositories to the registry.
+- `start_path` (optional): Starting path for search when scan=true (default: current directory)
 
 **Response**:
 ```json
@@ -53,6 +54,13 @@ List all available `.filex` repositories.
   "count": 1
 }
 ```
+
+**Note**: Repositories are automatically registered when:
+- They are discovered during a scan
+- They are accessed via the index, search, or stats endpoints
+- A new repository is created during indexing
+
+The registry is stored at `~/.filex/registry.json` and persists across server restarts.
 
 ### 2. Index Files
 

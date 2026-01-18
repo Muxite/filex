@@ -1,0 +1,15 @@
+{
+  "file_path": "C:\\Users\\mukch\\projects\\filex\\practice\\DSC03782.JPG",
+  "file_name": "DSC03782.JPG",
+  "file_extension": ".jpg",
+  "file_size_bytes": 3718223,
+  "file_size_kb": 3631.0771484375,
+  "file_size_mb": 3.545973777770996,
+  "modified_time": "2025-10-25T20:09:14.902768",
+  "created_time": "2026-01-18T10:47:42.561965",
+  "embeddings_info": {
+    "num_chunks": 1,
+    "embedding_dimension": 512
+  },
+  "processed": true
+}

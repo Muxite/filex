@@ -33,9 +33,17 @@ def configure_logging(
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     
+    # Configure logging with unbuffered output for better signal handling
     logging.basicConfig(
         level=log_level,
         format=format_string,
         stream=stream,
-        datefmt="%Y-%m-%d %H:%M:%S"
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True  # Force reconfiguration if already configured
     )
+    
+    # Ensure handlers flush immediately
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if hasattr(handler, 'stream') and hasattr(handler.stream, 'flush'):
+            handler.stream.flush()

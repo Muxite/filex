@@ -12,6 +12,7 @@ To stop the server, press Ctrl+C or send a shutdown signal.
 import argparse
 import signal
 import sys
+import os
 import uvicorn
 from pathlib import Path
 
@@ -25,7 +26,10 @@ def signal_handler(sig, frame):
     """
     print("\n\nShutting down FileX web server...")
     print("Cleaning up resources...")
-    sys.exit(0)
+    # Flush stdout to ensure message is printed
+    sys.stdout.flush()
+    # Exit immediately without waiting
+    os._exit(0)
 
 
 def main():
@@ -80,11 +84,13 @@ def main():
             port=args.port,
             reload=args.reload,
             log_level="info",
+            access_log=False,  # Disable access logs to reduce output
         )
     except KeyboardInterrupt:
         print("\n\nShutting down FileX web server...")
         print("Cleaning up resources...")
-        sys.exit(0)
+        sys.stdout.flush()
+        os._exit(0)
 
 
 if __name__ == "__main__":

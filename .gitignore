@@ -150,7 +150,7 @@ venv.bak/
 
 # Rope project settings
 .ropeproject
-
+frontend/node_modules/
 # mkdocs documentation
 /site
 

@@ -1,11 +1,11 @@
 # FILEX - Semantic File System Search Dashboard
 
-A local analytics dashboard for semantic file system search, designed for Windows file systems.
+A local dashboard for semantic file system search, designed for Windows file systems.
 
 ## Features
 
 - 🔍 **Semantic Search** - Search for files using natural language queries
-- 📊 **Real-time Analytics** - View indexing progress, file type distributions, and storage metrics
+- 📊 **Real-time Statistics** - View indexing progress, file type distributions, and storage metrics
 - 🌙 **Dark Mode** - Optional dark mode support
 - 📁 **Multi-Directory Support** - Monitor multiple root directories simultaneously
 - 🎨 **Modern UI** - Clean, responsive interface built with React and Tailwind CSS
@@ -118,6 +118,6 @@ npm run dev
 
 - Real-time updates via WebSocket
 - Advanced search filters
-- Export analytics data
+- Export statistics data
 - File preview functionality
 - Multi-language support

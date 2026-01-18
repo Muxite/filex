@@ -127,14 +127,18 @@ class RepositoryManager:
                 
                 if chunks is not None and isinstance(chunks, list) and len(chunks) > 0:
                     if isinstance(embeddings, np.ndarray):
+                        file_ext = Path(file_path).suffix.lower()
+                        is_image_file = file_ext in {'.png', '.jpg', '.jpeg'}
+                        
                         self.logger.info(
-                            f"Adding {len(chunks)} chunks to search index for: {Path(file_path).name}"
+                            f"Adding {len(chunks)} chunks to {'image' if is_image_file else 'text'} search index for: {Path(file_path).name}"
                         )
                         try:
                             self.search_manager.add_file_embeddings(
                                 str(file_path),
                                 chunks,
                                 embeddings,
+                                is_image=is_image_file,
                             )
                         except Exception as e:
                             self.logger.error(

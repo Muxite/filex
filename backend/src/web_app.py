@@ -101,14 +101,26 @@ class GlobalState:
         """
         Get or create RepositoryManager for a specific repository.
         
-        :param repo_path: Path to repository root (if None, searches from current dir)
+        :param repo_path: Path to directory where .filex should be created/used
+                         If path doesn't have .filex, it will be created
         :returns: RepositoryManager instance
+        :raises ValueError: If path does not exist or is not a directory
         """
         if self.processor is None:
             self.initialize_models()
         
         if repo_path:
-            return RepositoryManager(start_path=repo_path, processor=self.processor, create=True)
+            try:
+                path = Path(repo_path).resolve()
+            except Exception as e:
+                raise ValueError(f"Invalid path format: {repo_path} - {str(e)}")
+            
+            if not path.exists():
+                raise ValueError(f"Path does not exist: {repo_path}")
+            if not path.is_dir():
+                raise ValueError(f"Path is not a directory: {repo_path}")
+            
+            return RepositoryManager(start_path=str(path), processor=self.processor, create=True)
         else:
             return RepositoryManager(processor=self.processor, create=True)
     
@@ -116,7 +128,17 @@ class GlobalState:
         """
         Clean up resources.
         """
-        self.executor.shutdown(wait=True)
+        try:
+            # Shutdown executor without waiting for tasks to complete
+            # This allows Ctrl+C to work immediately
+            # cancel_futures is only available in Python 3.9+
+            import sys
+            if sys.version_info >= (3, 9):
+                self.executor.shutdown(wait=False, cancel_futures=True)
+            else:
+                self.executor.shutdown(wait=False)
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
 
 
 state = GlobalState()
@@ -142,28 +164,10 @@ class RepoPathRequest(BaseModel):
     repo_path: Optional[str] = Field(None, description="Path to repository root")
 
 
-def find_all_repositories(start_path: str = ".") -> List[Dict[str, str]]:
-    """
-    Find all .filex repositories starting from a given path.
-    
-    :param start_path: Starting path for search
-    :returns: List of repository info dictionaries
-    """
-    repos = []
-    start = Path(start_path).resolve()
-    
-    for root, dirs, files in os.walk(start):
-        if ".filex" in dirs:
-            repo_path = Path(root) / ".filex"
-            work_tree = Path(root)
-            repos.append({
-                "repo_path": str(repo_path),
-                "work_tree": str(work_tree),
-                "name": work_tree.name or str(work_tree)
-            })
-            dirs.remove(".filex")
-    
-    return repos
+class RegisterFolderRequest(BaseModel):
+    path: str = Field(..., description="Path to folder to register")
+
+
 
 
 @app.on_event("startup")
@@ -181,8 +185,18 @@ async def shutdown_event():
     """
     Cleanup on shutdown.
     """
-    state.cleanup()
-    print("FileX server shutdown complete.")
+    try:
+        state.cleanup()
+        # Flush all logging handlers
+        import logging
+        for handler in logging.root.handlers[:]:
+            handler.flush()
+            if hasattr(handler, 'close'):
+                handler.close()
+    except Exception as e:
+        print(f"Error during shutdown: {e}")
+    finally:
+        print("FileX server shutdown complete.")
 
 
 @app.get("/")
@@ -203,19 +217,112 @@ async def root():
     }
 
 
+REGISTERED_FOLDERS_FILE = Path(__file__).parent.parent / "registered_folders.json"
+
+
+def load_registered_folders() -> List[str]:
+    """
+    Load registered folders from JSON file.
+    
+    :returns: List of folder paths
+    """
+    try:
+        if REGISTERED_FOLDERS_FILE.exists():
+            with open(REGISTERED_FOLDERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("folders", [])
+        return []
+    except Exception as e:
+        print(f"Error loading registered folders: {e}")
+        return []
+
+
+def save_registered_folders(folders: List[str]) -> None:
+    """
+    Save registered folders to JSON file.
+    
+    :param folders: List of folder paths to save
+    """
+    try:
+        REGISTERED_FOLDERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(REGISTERED_FOLDERS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"folders": folders}, f, indent=2)
+    except Exception as e:
+        print(f"Error saving registered folders: {e}")
+        raise
+
+
 @app.get("/api/repositories")
-async def list_repositories(start_path: Optional[str] = None):
+async def list_repositories():
     """
-    List all available .filex repositories.
+    List recently used .filex repositories.
     
-    :param start_path: Starting path for search (default: current directory)
-    :returns: List of repository information
+    Returns empty list - repositories are managed by user-provided paths.
+    
+    :returns: List of repository information (currently empty)
     """
-    if start_path is None:
-        start_path = os.getcwd()
+    return {"repositories": [], "count": 0}
+
+
+@app.get("/api/registered-folders")
+async def get_registered_folders():
+    """
+    Get list of registered folders.
     
-    repos = find_all_repositories(start_path)
-    return {"repositories": repos, "count": len(repos)}
+    :returns: List of registered folder paths
+    """
+    folders = load_registered_folders()
+    return {"folders": folders, "count": len(folders)}
+
+
+@app.post("/api/registered-folders")
+async def register_folder(request: RegisterFolderRequest):
+    """
+    Register a new folder path.
+    
+    :param request: Folder path to register
+    :returns: Success message and updated folder list
+    """
+    try:
+        path = Path(request.path).resolve()
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"Path does not exist: {request.path}")
+        if not path.is_dir():
+            raise HTTPException(status_code=400, detail=f"Path is not a directory: {request.path}")
+        
+        folders = load_registered_folders()
+        path_str = str(path)
+        
+        if path_str not in folders:
+            folders.append(path_str)
+            save_registered_folders(folders)
+        
+        return {"message": "Folder registered successfully", "folders": folders, "count": len(folders)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to register folder: {str(e)}")
+
+
+@app.delete("/api/registered-folders/{folder_path:path}")
+async def unregister_folder(folder_path: str):
+    """
+    Unregister a folder path.
+    
+    :param folder_path: Path to folder to unregister (URL encoded)
+    :returns: Success message and updated folder list
+    """
+    try:
+        folders = load_registered_folders()
+        path_str = str(Path(folder_path).resolve())
+        
+        if path_str in folders:
+            folders.remove(path_str)
+            save_registered_folders(folders)
+        
+        return {"message": "Folder unregistered successfully", "folders": folders, "count": len(folders)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unregister folder: {str(e)}")
 
 
 @app.post("/api/index")
@@ -228,27 +335,52 @@ async def index_files(request: IndexRequest, background_tasks: BackgroundTasks):
     :returns: Task information
     """
     try:
+        if not request.repo_path:
+            raise HTTPException(status_code=400, detail="repo_path is required")
+        
+        # Validate path before creating repository manager
+        try:
+            path = Path(request.repo_path).resolve()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid path format: {str(e)}")
+        
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"Path does not exist: {request.repo_path}")
+        
+        if not path.is_dir():
+            raise HTTPException(status_code=400, detail=f"Path is not a directory: {request.repo_path}")
+        
         repo_manager = state.get_repo_manager(request.repo_path)
         repo_id = str(repo_manager.repository.repo_path)
         
         with state.lock:
             if repo_id in state.indexing_tasks:
-                return JSONResponse(
-                    status_code=409,
-                    content={"error": "Indexing already in progress for this repository"}
-                )
+                existing_task = state.indexing_tasks[repo_id]
+                if existing_task["status"] in ("starting", "indexing"):
+                    return JSONResponse(
+                        status_code=409,
+                        content={
+                            "error": "Indexing already in progress for this repository",
+                            "task_id": repo_id,
+                            "status": existing_task["status"],
+                            "indexed": existing_task.get("indexed", 0),
+                            "total": existing_task.get("total", 0),
+                        }
+                    )
             
             state.indexing_tasks[repo_id] = {
                 "status": "starting",
                 "indexed": 0,
                 "total": 0,
                 "errors": 0,
+                "message": "Initializing indexing...",
             }
         
         def index_task():
             try:
                 with state.lock:
                     state.indexing_tasks[repo_id]["status"] = "indexing"
+                    state.indexing_tasks[repo_id]["message"] = "Indexing files..."
                 
                 if request.path:
                     path = Path(request.path)
@@ -258,47 +390,63 @@ async def index_files(request: IndexRequest, background_tasks: BackgroundTasks):
                             if result.get("indexed"):
                                 state.indexing_tasks[repo_id]["indexed"] = 1
                                 state.indexing_tasks[repo_id]["total"] = 1
+                                state.indexing_tasks[repo_id]["message"] = "File indexed successfully"
                             else:
                                 state.indexing_tasks[repo_id]["indexed"] = 0
                                 state.indexing_tasks[repo_id]["total"] = 1
+                                state.indexing_tasks[repo_id]["message"] = "File skipped (unchanged)"
                     else:
+                        default_indexable_extensions = ['.txt', '.docx', '.png', '.jpg', '.jpeg']
+                        extensions_to_use = request.extensions if request.extensions is not None else default_indexable_extensions
                         stats = repo_manager.index_directory(
                             directory=request.path,
                             recursive=request.recursive,
-                            extensions=request.extensions,
+                            extensions=extensions_to_use,
                             force=request.force,
                         )
                         with state.lock:
                             state.indexing_tasks[repo_id]["indexed"] = stats["indexed"]
                             state.indexing_tasks[repo_id]["total"] = stats["total_files"]
                             state.indexing_tasks[repo_id]["errors"] = stats["errors"]
+                            state.indexing_tasks[repo_id]["message"] = f"Indexed {stats['indexed']} of {stats['total_files']} files"
                 else:
+                    default_indexable_extensions = ['.txt', '.docx', '.png', '.jpg', '.jpeg']
+                    extensions_to_use = request.extensions if request.extensions is not None else default_indexable_extensions
                     stats = repo_manager.index_directory(
                         recursive=request.recursive,
-                        extensions=request.extensions,
+                        extensions=extensions_to_use,
                         force=request.force,
                     )
                     with state.lock:
                         state.indexing_tasks[repo_id]["indexed"] = stats["indexed"]
                         state.indexing_tasks[repo_id]["total"] = stats["total_files"]
                         state.indexing_tasks[repo_id]["errors"] = stats["errors"]
+                        state.indexing_tasks[repo_id]["message"] = f"Indexed {stats['indexed']} of {stats['total_files']} files"
                 
                 with state.lock:
                     state.indexing_tasks[repo_id]["status"] = "completed"
+                    state.indexing_tasks[repo_id]["message"] = "Indexing completed successfully"
             except Exception as e:
                 with state.lock:
                     state.indexing_tasks[repo_id]["status"] = "error"
                     state.indexing_tasks[repo_id]["error"] = str(e)
+                    state.indexing_tasks[repo_id]["message"] = f"Indexing failed: {str(e)}"
         
         state.executor.submit(index_task)
         
         return {
             "task_id": repo_id,
             "status": "started",
-            "message": "Indexing started in background"
+            "message": "Indexing started in background",
+            "repo_path": request.repo_path,
         }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        # Convert ValueError to HTTPException for path validation errors
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to start indexing: {str(e)}")
 
 
 @app.post("/api/search")
@@ -320,7 +468,18 @@ async def search_files(request: SearchRequest):
         if query_embedding.ndim > 1 and query_embedding.shape[0] == 1:
             query_embedding = query_embedding[0]
         
-        results = search_manager.search(query_embedding, top_k=request.top_k)
+        image_query_embedding = None
+        if state.image_embedder is not None:
+            try:
+                image_query_embedding = state.image_embedder.embed_text(request.query)
+            except Exception as e:
+                print(f"Warning: Failed to generate image query embedding: {e}")
+        
+        results = search_manager.search(
+            query_embedding,
+            top_k=request.top_k,
+            image_query_embedding=image_query_embedding,
+        )
         
         formatted_results = []
         for result in results:
@@ -362,14 +521,27 @@ async def get_stats(request: RepoPathRequest):
     """
     Get repository statistics.
     
+    Creates repository if it doesn't exist. Provides approximate stats
+    for directories that haven't been indexed yet.
+    
     :param request: Repository path request
     :returns: Detailed statistics about the repository
     """
     try:
+        work_tree_path = None
+        if request.repo_path:
+            path = Path(request.repo_path).resolve()
+            if not path.exists():
+                raise HTTPException(status_code=404, detail=f"Path does not exist: {request.repo_path}")
+            if not path.is_dir():
+                raise HTTPException(status_code=400, detail=f"Path is not a directory: {request.repo_path}")
+            work_tree_path = path
+        
         repo_manager = state.get_repo_manager(request.repo_path)
         index_manager = repo_manager.index_manager
         storage_manager = repo_manager.storage_manager
         search_manager = repo_manager.search_manager
+        work_tree = repo_manager.repository.get_work_tree_root()
         
         entries = index_manager.get_all_entries()
         storage_size = storage_manager.get_storage_size()
@@ -389,15 +561,31 @@ async def get_stats(request: RepoPathRequest):
         image_extensions = {'.png', '.jpg', '.jpeg'}
         image_files = sum(1 for e in entries if e.extension.lower() in image_extensions)
         non_text_files = len(entries) - text_files
-        
         total_chunks = sum(e.num_chunks or 0 for e in entries)
         
-        work_tree = repo_manager.repository.get_work_tree_root()
-        
         eligible_files = []
+        eligible_file_types = {}
+        text_extensions = {'.txt', '.docx'}
+        indexable_extensions = {'.txt', '.docx', '.png', '.jpg', '.jpeg'}
+        total_size = 0
+        
         for file_path in work_tree.rglob("*"):
             if file_path.is_file() and ".filex" not in file_path.parts:
-                eligible_files.append(str(file_path))
+                ext = file_path.suffix.lower()
+                if ext in indexable_extensions:
+                    eligible_files.append(str(file_path))
+                    if ext not in eligible_file_types:
+                        eligible_file_types[ext] = {"count": 0, "total_size": 0}
+                    eligible_file_types[ext]["count"] += 1
+                    try:
+                        file_size = file_path.stat().st_size
+                        eligible_file_types[ext]["total_size"] += file_size
+                        total_size += file_size
+                    except:
+                        pass
+        
+        eligible_text_files = sum(1 for f in eligible_files if Path(f).suffix.lower() in text_extensions)
+        eligible_image_files = sum(1 for f in eligible_files if Path(f).suffix.lower() in image_extensions)
         
         return {
             "repository_path": str(repo_manager.repository.repo_path),
@@ -424,6 +612,14 @@ async def get_stats(request: RepoPathRequest):
             },
             "file_types": file_types,
             "eligible_files_count": len(eligible_files),
+            "eligible_file_types": eligible_file_types,
+            "eligible_statistics": {
+                "total_files": len(eligible_files),
+                "text_files": eligible_text_files,
+                "image_files": eligible_image_files,
+                "total_size_bytes": total_size,
+                "total_size_mb": total_size / (1024 * 1024),
+            },
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -434,19 +630,32 @@ async def get_progress(repo_id: str):
     """
     Get indexing progress for a repository.
     
-    :param repo_id: Repository path (used as task ID)
+    :param repo_id: Repository path (used as task ID, URL encoded)
     :returns: Current indexing progress
     """
-    with state.lock:
-        if repo_id not in state.indexing_tasks:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "No indexing task found for this repository"}
-            )
+    try:
+        decoded_repo_id = repo_id
+        with state.lock:
+            if decoded_repo_id not in state.indexing_tasks:
+                return {
+                    "status": "not_found",
+                    "indexed": 0,
+                    "total": 0,
+                    "errors": 0,
+                    "message": "No indexing task found"
+                }
+            
+            task_info = state.indexing_tasks[decoded_repo_id].copy()
         
-        task_info = state.indexing_tasks[repo_id].copy()
-    
-    return task_info
+        return task_info
+    except Exception as e:
+        return {
+            "status": "error",
+            "indexed": 0,
+            "total": 0,
+            "errors": 0,
+            "message": f"Error getting progress: {str(e)}"
+        }
 
 
 @app.delete("/api/progress/{repo_id}")
