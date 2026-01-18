@@ -28,6 +28,7 @@ class RepositoryManager:
         start_path: Optional[str] = None,
         processor: Optional[FileProcessorRouter] = None,
         create: bool = True,
+        exact_location: bool = False,
     ):
         """
         Initialize repository manager.
@@ -35,10 +36,11 @@ class RepositoryManager:
         :param start_path: Path to start repository search from (defaults to current directory)
         :param processor: FileProcessorRouter instance (optional)
         :param create: Whether to create repository if not found
+        :param exact_location: If True, create repository at exact start_path location, don't walk up tree
         """
         self.logger = get_logger(__name__)
         
-        self.repository = Repository(start_path=start_path, create=create)
+        self.repository = Repository(start_path=start_path, create=create, exact_location=exact_location)
         self.index_manager = IndexManager(self.repository)
         self.storage_manager = StorageManager(self.repository)
         self.search_manager = SearchManager(self.repository)

@@ -165,7 +165,12 @@ function mapApiStatsToDirectoryStats(apiStats: ApiStats, progress?: IndexProgres
     ? apiStats.file_types
     : apiStats.eligible_file_types || {};
 
+  const systemFileExtensions = ['.npy', '.json', '.db'];
+  
   for (const [ext, data] of Object.entries(sourceFileTypes)) {
+    if (systemFileExtensions.includes(ext.toLowerCase())) {
+      continue;
+    }
     const typeName = formatFileTypeName(ext);
     if (!typeMap[typeName]) {
       typeMap[typeName] = { count: 0, size: 0 };
@@ -209,6 +214,9 @@ function mapApiStatsToDirectoryStats(apiStats: ApiStats, progress?: IndexProgres
   const dirMap: { [key: string]: { size: number; files: number } } = {};
 
   for (const [ext, data] of Object.entries(sourceFileTypes)) {
+    if (systemFileExtensions.includes(ext.toLowerCase())) {
+      continue;
+    }
     const dirName = ext.substring(1).toUpperCase() + " Files";
     if (!dirMap[dirName]) {
       dirMap[dirName] = { size: 0, files: 0 };

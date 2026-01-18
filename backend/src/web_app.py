@@ -29,6 +29,8 @@ from . import (
     StorageManager,
     SearchManager,
     SearchResult,
+    configure_logging,
+    get_logger,
 )
 
 
@@ -42,6 +44,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+configure_logging(level="INFO")
+logger = get_logger(__name__)
+
 
 class GlobalState:
     """
@@ -50,6 +55,7 @@ class GlobalState:
     Models are loaded once and kept in memory for the lifetime of the server.
     """
     def __init__(self):
+        self.logger = get_logger(__name__)
         self.text_embedder: Optional[SentenceTransformerEmbedder] = None
         self.image_embedder: Optional[CLIPImageEmbedder] = None
         self.text_embedding_handler: Optional[TextEmbeddingHandler] = None
@@ -59,6 +65,7 @@ class GlobalState:
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.indexing_tasks: Dict[str, Dict[str, Any]] = {}
         self.lock = threading.Lock()
+        self.logger.info("GlobalState initialized")
     
     def initialize_models(
         self,
@@ -71,31 +78,52 @@ class GlobalState:
         :param text_model: Sentence-transformer model name
         :param image_model: CLIP model name
         """
+        self.logger.info(f"Initializing embedding models (text: {text_model}, image: {image_model})...")
+        
         if self.text_embedder is None:
+            self.logger.info(f"Loading text embedding model: {text_model}")
             self.text_embedder = SentenceTransformerEmbedder(model_name=text_model)
+            self.logger.info(f"Text embedding model loaded successfully")
+            
+            self.logger.info("Initializing text chunker (size: 512, overlap: 50)")
             chunker = FixedSizeChunker(chunk_size=512, overlap=50)
+            
+            self.logger.info("Creating text embedding handler")
             self.text_embedding_handler = TextEmbeddingHandler(
                 embedder=self.text_embedder,
                 chunker=chunker
             )
+            
+            self.logger.info("Creating text file handler")
             self.text_handler = TextFileHandler(embedding_handler=self.text_embedding_handler)
+            self.logger.info("Text processing components initialized")
         
         if self.image_embedder is None:
             try:
+                self.logger.info(f"Loading image embedding model: {image_model}")
                 self.image_embedder = CLIPImageEmbedder(model_name=image_model)
+                self.logger.info("Image embedding model loaded successfully")
+                
+                self.logger.info("Creating image file handler")
                 self.image_handler = ImageFileHandler(image_embedder=self.image_embedder)
+                self.logger.info("Image processing components initialized")
             except Exception as e:
-                print(f"Warning: Could not initialize image handler: {e}")
+                self.logger.warning(f"Could not initialize image handler: {e}")
+                self.logger.info("Continuing without image support")
                 self.image_handler = None
         
         if self.processor is None:
             if self.image_handler:
+                self.logger.info("Creating file processor router with text and image handlers")
                 self.processor = FileProcessorRouter(
                     text_handler=self.text_handler,
                     image_handler=self.image_handler
                 )
             else:
+                self.logger.info("Creating file processor router with text handler only")
                 self.processor = FileProcessorRouter(text_handler=self.text_handler)
+        
+        self.logger.info("All models initialized successfully")
     
     def get_repo_manager(self, repo_path: Optional[str] = None) -> RepositoryManager:
         """
@@ -107,22 +135,48 @@ class GlobalState:
         :raises ValueError: If path does not exist or is not a directory
         """
         if self.processor is None:
+            self.logger.warning("Processor not initialized, initializing models now")
             self.initialize_models()
         
         if repo_path:
+            self.logger.info(f"Getting repository manager for path: {repo_path}")
             try:
                 path = Path(repo_path).resolve()
+                self.logger.debug(f"Resolved path to: {path}")
             except Exception as e:
-                raise ValueError(f"Invalid path format: {repo_path} - {str(e)}")
+                error_msg = f"Invalid path format: {repo_path} - {str(e)}"
+                self.logger.error(error_msg)
+                raise ValueError(error_msg) from e
             
             if not path.exists():
-                raise ValueError(f"Path does not exist: {repo_path}")
-            if not path.is_dir():
-                raise ValueError(f"Path is not a directory: {repo_path}")
+                try:
+                    self.logger.info(f"Path does not exist, attempting to create: {path}")
+                    path.mkdir(parents=True, exist_ok=True)
+                    self.logger.info(f"Successfully created directory: {path}")
+                except (OSError, PermissionError) as e:
+                    error_msg = f"Cannot create directory {repo_path}: {str(e)}"
+                    self.logger.error(error_msg)
+                    raise ValueError(error_msg) from e
             
-            return RepositoryManager(start_path=str(path), processor=self.processor, create=True)
+            if not path.is_dir():
+                error_msg = f"Path is not a directory: {repo_path}"
+                self.logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            try:
+                self.logger.info(f"Creating RepositoryManager for {repo_path} at exact location (will create .filex if needed)")
+                repo_manager = RepositoryManager(start_path=str(path), processor=self.processor, create=True, exact_location=True)
+                self.logger.info(f"RepositoryManager created successfully at: {repo_manager.repository.repo_path}")
+                return repo_manager
+            except OSError as e:
+                error_msg = f"Failed to create .filex repository at {repo_path}: {str(e)}"
+                self.logger.error(error_msg)
+                raise ValueError(error_msg) from e
         else:
-            return RepositoryManager(processor=self.processor, create=True)
+            self.logger.info("Getting repository manager for current directory")
+            repo_manager = RepositoryManager(processor=self.processor, create=True, exact_location=False)
+            self.logger.info(f"RepositoryManager created at: {repo_manager.repository.repo_path}")
+            return repo_manager
     
     def cleanup(self) -> None:
         """
@@ -138,7 +192,7 @@ class GlobalState:
             else:
                 self.executor.shutdown(wait=False)
         except Exception as e:
-            print(f"Error during cleanup: {e}")
+            self.logger.error(f"Error during cleanup: {e}", exc_info=True)
 
 
 state = GlobalState()
@@ -175,9 +229,21 @@ async def startup_event():
     """
     Initialize models on startup.
     """
-    print("Initializing FileX models (this may take a few seconds)...")
-    state.initialize_models()
-    print("FileX models loaded and ready.")
+    logger.info("=" * 60)
+    logger.info("FileX Web API - Starting up")
+    logger.info("=" * 60)
+    logger.info("Initializing FileX models (this may take a few seconds)...")
+    logger.info("Loading embedding models and setting up processors...")
+    
+    try:
+        state.initialize_models()
+        logger.info("=" * 60)
+        logger.info("FileX models loaded and ready.")
+        logger.info("Server is ready to accept requests")
+        logger.info("=" * 60)
+    except Exception as e:
+        logger.error(f"Failed to initialize models: {e}", exc_info=True)
+        raise
 
 
 @app.on_event("shutdown")
@@ -185,18 +251,25 @@ async def shutdown_event():
     """
     Cleanup on shutdown.
     """
+    logger.info("=" * 60)
+    logger.info("FileX Web API - Shutting down")
+    logger.info("=" * 60)
     try:
+        logger.info("Cleaning up resources...")
         state.cleanup()
-        # Flush all logging handlers
+        logger.info("Resources cleaned up")
+        
         import logging
+        logger.info("Flushing logging handlers...")
         for handler in logging.root.handlers[:]:
             handler.flush()
             if hasattr(handler, 'close'):
                 handler.close()
     except Exception as e:
-        print(f"Error during shutdown: {e}")
+        logger.error(f"Error during shutdown: {e}", exc_info=True)
     finally:
-        print("FileX server shutdown complete.")
+        logger.info("FileX server shutdown complete.")
+        logger.info("=" * 60)
 
 
 @app.get("/")
@@ -228,13 +301,17 @@ def load_registered_folders() -> List[str]:
     """
     try:
         if REGISTERED_FOLDERS_FILE.exists():
+            logger.debug(f"Loading registered folders from: {REGISTERED_FOLDERS_FILE}")
             with open(REGISTERED_FOLDERS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get("folders", [])
-        return []
+                folders = data.get("folders", [])
+                logger.info(f"Loaded {len(folders)} registered folder(s)")
+                return folders
+        else:
+            logger.debug(f"Registered folders file does not exist: {REGISTERED_FOLDERS_FILE}")
     except Exception as e:
-        print(f"Error loading registered folders: {e}")
-        return []
+        logger.error(f"Error loading registered folders: {e}", exc_info=True)
+    return []
 
 
 def save_registered_folders(folders: List[str]) -> None:
@@ -244,11 +321,13 @@ def save_registered_folders(folders: List[str]) -> None:
     :param folders: List of folder paths to save
     """
     try:
+        logger.debug(f"Saving {len(folders)} registered folder(s) to: {REGISTERED_FOLDERS_FILE}")
         REGISTERED_FOLDERS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(REGISTERED_FOLDERS_FILE, "w", encoding="utf-8") as f:
             json.dump({"folders": folders}, f, indent=2)
+        logger.info(f"Successfully saved registered folders")
     except Exception as e:
-        print(f"Error saving registered folders: {e}")
+        logger.error(f"Error saving registered folders: {e}", exc_info=True)
         raise
 
 
@@ -334,24 +413,32 @@ async def index_files(request: IndexRequest, background_tasks: BackgroundTasks):
     :param background_tasks: FastAPI background tasks
     :returns: Task information
     """
+    logger.info(f"POST /api/index - Starting indexing for repo_path: {request.repo_path}")
     try:
         if not request.repo_path:
+            logger.warning("Index request missing repo_path")
             raise HTTPException(status_code=400, detail="repo_path is required")
         
-        # Validate path before creating repository manager
+        logger.info(f"Validating path: {request.repo_path}")
         try:
             path = Path(request.repo_path).resolve()
+            logger.debug(f"Resolved path to: {path}")
         except Exception as e:
+            logger.error(f"Invalid path format: {str(e)}")
             raise HTTPException(status_code=400, detail=f"Invalid path format: {str(e)}")
         
         if not path.exists():
+            logger.warning(f"Path does not exist: {request.repo_path}")
             raise HTTPException(status_code=404, detail=f"Path does not exist: {request.repo_path}")
         
         if not path.is_dir():
+            logger.warning(f"Path is not a directory: {request.repo_path}")
             raise HTTPException(status_code=400, detail=f"Path is not a directory: {request.repo_path}")
         
+        logger.info(f"Getting repository manager for: {request.repo_path}")
         repo_manager = state.get_repo_manager(request.repo_path)
         repo_id = str(repo_manager.repository.repo_path)
+        logger.info(f"Repository manager obtained, repo_id: {repo_id}")
         
         with state.lock:
             if repo_id in state.indexing_tasks:
@@ -384,20 +471,25 @@ async def index_files(request: IndexRequest, background_tasks: BackgroundTasks):
                 
                 if request.path:
                     path = Path(request.path)
+                    logger.info(f"Indexing specific path: {request.path} (force: {request.force})")
                     if path.is_file():
+                        logger.info(f"Indexing single file: {path}")
                         result = repo_manager.index_file(str(path), force=request.force)
                         with state.lock:
                             if result.get("indexed"):
                                 state.indexing_tasks[repo_id]["indexed"] = 1
                                 state.indexing_tasks[repo_id]["total"] = 1
                                 state.indexing_tasks[repo_id]["message"] = "File indexed successfully"
+                                logger.info(f"File indexed successfully: {path}")
                             else:
                                 state.indexing_tasks[repo_id]["indexed"] = 0
                                 state.indexing_tasks[repo_id]["total"] = 1
                                 state.indexing_tasks[repo_id]["message"] = "File skipped (unchanged)"
+                                logger.info(f"File skipped (unchanged): {path}")
                     else:
                         default_indexable_extensions = ['.txt', '.docx', '.png', '.jpg', '.jpeg']
                         extensions_to_use = request.extensions if request.extensions is not None else default_indexable_extensions
+                        logger.info(f"Indexing directory: {request.path} (recursive: {request.recursive}, extensions: {extensions_to_use})")
                         stats = repo_manager.index_directory(
                             directory=request.path,
                             recursive=request.recursive,
@@ -409,9 +501,11 @@ async def index_files(request: IndexRequest, background_tasks: BackgroundTasks):
                             state.indexing_tasks[repo_id]["total"] = stats["total_files"]
                             state.indexing_tasks[repo_id]["errors"] = stats["errors"]
                             state.indexing_tasks[repo_id]["message"] = f"Indexed {stats['indexed']} of {stats['total_files']} files"
+                        logger.info(f"Directory indexing completed: {stats['indexed']}/{stats['total_files']} files indexed ({stats['errors']} errors)")
                 else:
                     default_indexable_extensions = ['.txt', '.docx', '.png', '.jpg', '.jpeg']
                     extensions_to_use = request.extensions if request.extensions is not None else default_indexable_extensions
+                    logger.info(f"Indexing all files in repository (recursive: {request.recursive}, extensions: {extensions_to_use})")
                     stats = repo_manager.index_directory(
                         recursive=request.recursive,
                         extensions=extensions_to_use,
@@ -422,17 +516,22 @@ async def index_files(request: IndexRequest, background_tasks: BackgroundTasks):
                         state.indexing_tasks[repo_id]["total"] = stats["total_files"]
                         state.indexing_tasks[repo_id]["errors"] = stats["errors"]
                         state.indexing_tasks[repo_id]["message"] = f"Indexed {stats['indexed']} of {stats['total_files']} files"
+                    logger.info(f"Repository indexing completed: {stats['indexed']}/{stats['total_files']} files indexed ({stats['errors']} errors)")
                 
                 with state.lock:
                     state.indexing_tasks[repo_id]["status"] = "completed"
                     state.indexing_tasks[repo_id]["message"] = "Indexing completed successfully"
+                logger.info(f"Indexing task completed successfully for: {repo_id}")
             except Exception as e:
+                logger.error(f"Indexing task failed for {repo_id}: {e}", exc_info=True)
                 with state.lock:
                     state.indexing_tasks[repo_id]["status"] = "error"
                     state.indexing_tasks[repo_id]["error"] = str(e)
                     state.indexing_tasks[repo_id]["message"] = f"Indexing failed: {str(e)}"
         
+        logger.info(f"Submitting indexing task to background executor for: {repo_id}")
         state.executor.submit(index_task)
+        logger.info(f"Indexing task submitted, returning response")
         
         return {
             "task_id": repo_id,
@@ -443,9 +542,10 @@ async def index_files(request: IndexRequest, background_tasks: BackgroundTasks):
     except HTTPException:
         raise
     except ValueError as e:
-        # Convert ValueError to HTTPException for path validation errors
+        logger.error(f"Value error during indexing setup: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Unexpected error during indexing setup: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to start indexing: {str(e)}")
 
 
@@ -473,7 +573,7 @@ async def search_files(request: SearchRequest):
             try:
                 image_query_embedding = state.image_embedder.embed_text(request.query)
             except Exception as e:
-                print(f"Warning: Failed to generate image query embedding: {e}")
+                logger.warning(f"Failed to generate image query embedding: {e}")
         
         results = search_manager.search(
             query_embedding,
@@ -527,16 +627,22 @@ async def get_stats(request: RepoPathRequest):
     :param request: Repository path request
     :returns: Detailed statistics about the repository
     """
+    logger.info(f"POST /api/stats - Getting statistics for repo_path: {request.repo_path}")
     try:
         work_tree_path = None
         if request.repo_path:
+            logger.info(f"Validating repository path: {request.repo_path}")
             path = Path(request.repo_path).resolve()
             if not path.exists():
+                logger.warning(f"Path does not exist: {request.repo_path}")
                 raise HTTPException(status_code=404, detail=f"Path does not exist: {request.repo_path}")
             if not path.is_dir():
+                logger.warning(f"Path is not a directory: {request.repo_path}")
                 raise HTTPException(status_code=400, detail=f"Path is not a directory: {request.repo_path}")
             work_tree_path = path
+            logger.debug(f"Work tree path: {work_tree_path}")
         
+        logger.info(f"Getting repository manager for: {request.repo_path}")
         repo_manager = state.get_repo_manager(request.repo_path)
         index_manager = repo_manager.index_manager
         storage_manager = repo_manager.storage_manager
@@ -547,9 +653,13 @@ async def get_stats(request: RepoPathRequest):
         storage_size = storage_manager.get_storage_size()
         search_stats = search_manager.get_index_stats()
         
+        system_file_extensions = {'.npy', '.json', '.db'}
+        
         file_types = {}
         for entry in entries:
             ext = entry.extension.lower()
+            if ext in system_file_extensions:
+                continue
             if ext not in file_types:
                 file_types[ext] = {"count": 0, "total_size": 0, "total_chunks": 0}
             file_types[ext]["count"] += 1

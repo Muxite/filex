@@ -35,12 +35,13 @@ class Repository:
     METADATA_DIR_NAME = "metadata"
     INDEX_DB_NAME = "index.db"
     
-    def __init__(self, start_path: Optional[str] = None, create: bool = True):
+    def __init__(self, start_path: Optional[str] = None, create: bool = True, exact_location: bool = False):
         """
         Initialize repository, finding or creating .filex folder.
         
         :param start_path: Path to start searching from (defaults to current directory)
         :param create: Whether to create repository if not found
+        :param exact_location: If True, create repository at exact start_path location, don't walk up tree
         """
         self.logger = get_logger(__name__)
         
@@ -48,19 +49,40 @@ class Repository:
             start_path = os.getcwd()
         
         start_path = Path(start_path).resolve()
-        self.logger.debug(f"Searching for repository starting from: {start_path}")
         
-        repo_path = self.find_repository(start_path)
+        if start_path.is_file():
+            start_path = start_path.parent
         
-        if repo_path is None and create:
-            repo_path = self.create_repository(start_path)
-        elif repo_path is None:
-            raise FileNotFoundError(
-                f"No .filex repository found starting from {start_path}. "
-                "Run with create=True to create one."
-            )
+        self.logger.debug(f"Searching for repository starting from: {start_path} (exact_location={exact_location})")
         
-        self.repo_path = repo_path
+        if exact_location:
+            repo_path = start_path / self.REPO_DIR_NAME
+            if repo_path.exists() and repo_path.is_dir():
+                self.logger.debug(f"Found repository at exact location: {repo_path}")
+                self.repo_path = repo_path
+            elif create:
+                self.logger.info(f"Creating repository at exact location: {start_path}")
+                repo_path = self.create_repository(start_path)
+                self.repo_path = repo_path
+            else:
+                raise FileNotFoundError(
+                    f"No .filex repository found at exact location {start_path}. "
+                    "Run with create=True to create one."
+                )
+        else:
+            repo_path = self.find_repository(start_path)
+            
+            if repo_path is None and create:
+                self.logger.info(f"No repository found, creating at: {start_path}")
+                repo_path = self.create_repository(start_path)
+            elif repo_path is None:
+                raise FileNotFoundError(
+                    f"No .filex repository found starting from {start_path}. "
+                    "Run with create=True to create one."
+                )
+            
+            self.repo_path = repo_path
+        
         self.config = self._setup_config()
         self.logger.info(f"Repository initialized at: {self.repo_path}")
     
@@ -96,6 +118,7 @@ class Repository:
         
         :param location: Location to create repository
         :returns: Path to created repository
+        :raises OSError: If repository cannot be created (permissions, etc.)
         """
         repo_path = location / self.REPO_DIR_NAME
         
@@ -103,16 +126,40 @@ class Repository:
             self.logger.warning(f"Repository already exists at: {repo_path}")
             return repo_path
         
+        if not location.exists():
+            try:
+                self.logger.info(f"Parent directory does not exist, creating: {location}")
+                location.mkdir(parents=True, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                error_msg = f"Cannot create parent directory {location}: {str(e)}"
+                self.logger.error(error_msg)
+                raise OSError(error_msg) from e
+        
+        if not location.is_dir():
+            error_msg = f"Location is not a directory: {location}"
+            self.logger.error(error_msg)
+            raise OSError(error_msg)
+        
         self.logger.info(f"Creating new repository at: {repo_path}")
-        repo_path.mkdir(parents=True, exist_ok=True)
+        try:
+            repo_path.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            error_msg = f"Cannot create repository directory {repo_path}: {str(e)}"
+            self.logger.error(error_msg)
+            raise OSError(error_msg) from e
         
         index_dir = repo_path / self.INDEX_DIR_NAME
         embeddings_dir = repo_path / self.EMBEDDINGS_DIR_NAME
         metadata_dir = repo_path / self.METADATA_DIR_NAME
         
         for directory in [index_dir, embeddings_dir, metadata_dir]:
-            directory.mkdir(parents=True, exist_ok=True)
-            self.logger.debug(f"Created directory: {directory}")
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                self.logger.debug(f"Created directory: {directory}")
+            except (OSError, PermissionError) as e:
+                error_msg = f"Cannot create subdirectory {directory}: {str(e)}"
+                self.logger.error(error_msg)
+                raise OSError(error_msg) from e
         
         self.logger.info(f"Repository created successfully at: {repo_path}")
         return repo_path
