@@ -1,180 +1,209 @@
-# filedex
-Google search for your file system. Made at NWHacks 2026.
-A local service that indexes and analyses a directory so that users can search a variety of files semantically based on document content (ex: `.txt`, `.docx` `.c`) and also image content (`.png`, `.jpg`, `.webp`). 
-It uses a combination of text embeddings, large language models, and computer vision to generate its metadata to track files. 
-A website is included to allow users to access their system efficiently, running locally for security.
+# FileDex
 
-## MVP Status
+**Search by meaning, not filenames.**
 
-### Completed: Full-Featured CLI Tool for Semantic File Indexing and Search
+Why is it easier to find a photo on Google than in your own files? Upgrade your system with FileDex!
 
-FileX now includes a complete, production-ready command-line interface that transforms how you search through your files. The system uses state-of-the-art semantic search technology to understand the meaning of your documents, not just keywords.
+FileDex is a powerful semantic search engine for your storage. Search your files using natural language, just like Google, with an efficient graphical user interface and command line interface. Find documents, images, and files by meaning, not just keywords. Completely local and secure, your data never leaves your device. 
 
-**What's Working Right Now:**
+[View on Devpost](https://devpost.com/software/filedex) | Made at NWHacks 2026
 
-**Powerful Indexing System**
-- Intelligent file indexing that automatically detects changes and only re-indexes what's needed
-- Support for `.txt` and `.docx` files with automatic text extraction
-- Recursive directory scanning with configurable file type filtering
-- Smart change detection using file hashes, sizes, and modification times
-- Progress tracking with real-time progress bars showing indexing status
+## Features
 
-**Advanced Semantic Search**
-- Natural language queries - search using plain English, not just keywords
-- High-dimensional embeddings (768 dimensions) for superior semantic understanding
-- Configurable embedding models - choose the right balance of speed and quality
-- Real-time search index that updates immediately as files are indexed
-- Cosine similarity search for finding semantically related content
-- Flexible query syntax with result count controls
+**Semantic Search**
+- Search using natural language queries - find files by meaning, not just filenames
+- Works with text documents (`.txt`, `.docx`) and images (`.png`, `.jpg`, `.webp`)
+- Cross-modal search: find images by describing them in text
 
-**Robust Repository Management**
-- Git-like repository system with `.filex` directory for metadata storage
-- Automatic repository discovery by walking up the directory tree
-- Separate storage for embeddings, metadata, and search indices
-- Comprehensive status reporting with detailed statistics
-- Efficient storage using NumPy arrays and JSON metadata
+**Dual Interface**
+- **Command Line**: Fast, scriptable CLI for power users
+- **Web Dashboard**: Beautiful, interactive GUI with real-time statistics and visualizations
 
-**Performance Optimizations**
-- Model caching - embedding models are cached after first download
-- Incremental updates - search index updates after each file, not in batches
-- Fast status command that doesn't require model loading
-- Optimized embedding generation with batch processing support
+**Privacy-First**
+- 100% local processing - no data leaves your device
+- All embeddings and metadata stored locally in `.filex/` directories
+- No cloud sync, no external services, complete data sovereignty
 
-**Usage:**
+**Fast & Efficient**
+- Git-like file tracking with automatic change detection
+- Incremental indexing - only re-indexes what's changed
+- Near-instant search results with in-memory similarity matching
+
+**Smart Indexing**
+- Automatic file type detection and content extraction
+- Intelligent chunking for large documents
+- Background processing keeps the UI responsive
+
+## Quick Start
+
+### Command Line Interface
+
 ```bash
-# Index all files in the current repository
+# Index all files in the current directory
 python filex.py index
-
-# Index a specific file or directory
-python filex.py index path/to/file.txt
-python filex.py index path/to/directory
 
 # Search with natural language
 python filex.py search "types of fruits"
-python filex.py search "programming languages" --count 5
+python filex.py search "plane" --count 10
 
 # Check repository status
 python filex.py status
 ```
 
-### Planned Features
-
-**Web API Endpoints**
-- RESTful API for file upload and indexing
-- HTTP endpoints for search functionality
-- Web-based user interface for file management
-
-**Image Support**
-- Computer vision integration for `.png`, `.jpg`, `.webp` files
-- Multimodal embeddings combining text and image understanding
-
-## Embedding Models & Techniques
-
-FileX leverages cutting-edge high-dimensional embedding technology to transform your files into searchable vector representations. The system supports multiple state-of-the-art embedding models, each optimized for different performance and quality requirements.
-
-### Supported Embedding Models
-
-| Model Name | Embedding Dimension | Technique Type | Strengths | When to Use |
-|---|---|---|---|---|
-| **all-mpnet-base-v2** (Default) | 768 | Sentence-BERT (Transformer-based) | High-quality semantic understanding, contextual embeddings, best for semantic similarity | Recommended default for most use cases, especially semantic search and document similarity |
-| **all-MiniLM-L12-v2** | 384 | Sentence-BERT (Lightweight) | Faster inference, good quality, lower memory usage | When speed is important and quality can be slightly reduced |
-| **all-MiniLM-L6-v2** | 384 | Sentence-BERT (Ultra-lightweight) | Fastest inference, smallest model size | For quick prototyping or resource-constrained environments |
-| **paraphrase-multilingual-mpnet-base-v2** | 768 | Multilingual Sentence-BERT | Supports 50+ languages, high quality | When indexing multilingual documents |
-| **sentence-transformers/all-roberta-large-v1** | 1024 | RoBERTa-based (Large) | Highest quality, best semantic understanding | When maximum search quality is required and resources allow |
-
-### Embedding Techniques Explained
-
-#### 1. Sentence-BERT (SBERT)
-**What it is**: A modification of the BERT model that produces semantically meaningful sentence embeddings suitable for similarity tasks.
-
-**How it works**: 
-- Uses siamese and triplet network structures
-- Fine-tuned on semantic similarity tasks
-- Generates fixed-size embeddings (typically 384-768 dimensions)
-- Optimized for cosine similarity and semantic search
-
-**Usage in FileX**: Default technique for all text-based file indexing and search. Converts document chunks and search queries into high-dimensional vectors in the same embedding space.
-
-#### 2. Contextual Word Embeddings (Transformer-based)
-**What it is**: Embeddings that capture word meaning based on context, unlike static word embeddings.
-
-**How it works**:
-- Uses transformer architecture (attention mechanisms)
-- Processes full context of sentences/documents
-- Handles polysemy (words with multiple meanings)
-- Generates embeddings that vary based on surrounding text
-
-**Usage in FileX**: The underlying technology for Sentence-BERT models, enabling understanding of context and meaning rather than just keyword matching.
-
-#### 3. Semantic Similarity Search
-**What it is**: Finding documents based on meaning and semantic similarity rather than exact keyword matches.
-
-**How it works**:
-- Documents and queries are embedded into the same vector space
-- Cosine similarity is computed between query and document embeddings
-- Results are ranked by semantic similarity scores
-- Enables finding relevant content even without exact keyword matches
-
-**Usage in FileX**: Core search mechanism - users can search with natural language queries and find relevant content based on meaning.
-
-### Model Selection Guidelines
-
-**For Production Use**:
-- **Default**: `all-mpnet-base-v2` (768 dimensions) - Best balance of quality and performance
-- **High Quality**: `all-roberta-large-v1` (1024 dimensions) - Maximum search accuracy
-- **Multilingual**: `paraphrase-multilingual-mpnet-base-v2` (768 dimensions) - For non-English content
-
-**For Development/Testing**:
-- **Fast**: `all-MiniLM-L6-v2` (384 dimensions) - Quick iteration and testing
-- **Balanced**: `all-MiniLM-L12-v2` (384 dimensions) - Good quality with better speed
-
-### Using Different Models
-
-Specify the embedding model when indexing or searching:
+### Web Dashboard
 
 ```bash
-# Index with default model (all-mpnet-base-v2, 768 dimensions)
-python filex.py index
+# Start the web server
+python filex-web.py
 
-# Index with a faster, lighter model
-python filex.py index --model all-MiniLM-L6-v2
-
-# Search with a specific model (must match indexing model)
-python filex.py search "your query" --model all-mpnet-base-v2
+# Open http://127.0.0.1:8000 in your browser
 ```
 
-**Important**: The model used for indexing must match the model used for searching. FileX stores embeddings in the repository, and mixing models will produce incorrect results.
+The web interface provides:
+- Visual search with real-time results
+- Indexing progress tracking
+- File type distribution charts
+- Storage statistics
+- Dark mode support
 
-### Embedding Dimensions & Performance
+## How It Works
 
-**Higher Dimensions (768-1024)**:
-- Better semantic understanding
-- More nuanced similarity matching
-- Better handling of complex queries
-- Higher memory usage
-- Slower inference
+FileX uses AI embedding models to understand the semantic meaning of your files:
 
-**Lower Dimensions (384)**:
-- Faster inference
-- Lower memory usage
-- Good for large-scale indexing
-- Slightly reduced semantic quality
-- May miss subtle semantic relationships
+**Text Files**: Embedded using Sentence-Transformers (768-dimensional vectors) for semantic understanding. Documents are chunked intelligently to capture context while maintaining search performance.
 
-### Technical Details
+**Images**: Embedded using OpenAI's CLIP ViT-B/32 model, enabling cross-modal search where text queries can find relevant images in the same embedding space.
 
-- **Embedding Space**: All embeddings are normalized and use cosine similarity for comparison
-- **Chunking**: Documents are split into chunks (default: 512 characters with 50 character overlap) before embedding
-- **Storage**: Embeddings are stored as NumPy arrays in the `.filex/embeddings/` directory
-- **Search Index**: Maintained separately from file index for efficient search operations
-- **Incremental Updates**: Search index is updated immediately after each file is indexed
+**Search**: Both text and image embeddings are stored locally as NumPy arrays. An in-memory cosine similarity index enables near-instant search queries after initial indexing.
 
-### Best Practices
+**Repository System**: Each directory can have its own `.filex/` repository (similar to Git's `.git/`), automatically tracking file changes and maintaining separate indices for efficient updates.
 
-1. **Consistency**: Always use the same model for indexing and searching
-2. **Quality vs Speed**: Choose based on your use case - production should use higher-dimensional models
-3. **Multilingual Content**: Use multilingual models when indexing documents in multiple languages
-4. **Resource Constraints**: Use lighter models (384 dimensions) if memory or speed is a concern
-5. **Model Caching**: Models are downloaded and cached automatically on first use
+## Architecture
 
-​​
+FileX is built with a modular architecture:
+
+- **Backend**: Python/FastAPI server with background task processing
+- **Frontend**: React/TypeScript dashboard with Tailwind CSS
+- **Storage**: Local `.filex/` directories with NumPy array embeddings and JSON metadata
+- **Search**: In-memory cosine similarity index for fast queries
+
+See [HOW_WE_BUILT_IT.md](HOW_WE_BUILT_IT.md) for detailed technical information.
+
+## Installation
+
+### Backend
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Usage Examples
+
+### Indexing Files
+
+```bash
+# Index all files in repository
+python filex.py index
+
+# Index specific directory
+python filex.py index path/to/directory
+
+# Index only specific file types
+python filex.py index --extensions .txt .docx .jpg
+
+# Force re-index everything
+python filex.py index --force
+```
+
+### Searching
+
+```bash
+# Basic search
+python filex.py search "meeting notes"
+
+# Limit results
+python filex.py search "programming languages" --count 5
+
+# Search with inline count
+python filex.py search "types of fruits -count 10"
+```
+
+### Web API
+
+The FastAPI server provides REST endpoints for programmatic access:
+
+- `POST /api/index` - Index files
+- `POST /api/search` - Search files
+- `POST /api/stats` - Get repository statistics
+- `GET /api/progress/{repo_id}` - Check indexing progress
+
+See [backend/WEB_API.md](backend/WEB_API.md) for complete API documentation.
+
+## Supported File Types
+
+**Text Files**
+- `.txt` - Plain text files
+- `.docx` - Microsoft Word documents
+
+**Images**
+- `.png` - PNG images
+- `.jpg`, `.jpeg` - JPEG images
+- `.webp` - WebP images
+
+Additional file types can be added by extending the file handlers.
+
+## Embedding Models
+
+FileX supports multiple embedding models optimized for different use cases:
+
+| Model | Dimensions | Best For |
+|-------|-----------|----------|
+| `all-mpnet-base-v2` (Default) | 768 | Production use, best quality/speed balance |
+| `all-MiniLM-L6-v2` | 384 | Fast indexing, resource-constrained environments |
+| `paraphrase-multilingual-mpnet-base-v2` | 768 | Multilingual documents |
+
+Specify models when indexing:
+```bash
+python filex.py index --model all-mpnet-base-v2
+```
+
+**Important**: Use the same model for indexing and searching.
+
+## Privacy & Security
+
+- **100% Local**: All processing happens on your machine
+- **No Network**: No data is sent to external services
+- **Local Storage**: All embeddings stored in `.filex/` directories
+- **No Authentication Required**: Designed for local use only (server binds to localhost by default)
+
+## Performance
+
+- **Indexing**: ~1-5 seconds per file (depends on size and model)
+- **Search**: <1 second for repositories with thousands of chunks
+- **Model Loading**: 5-10 seconds on first run (cached after download)
+- **Memory**: Models loaded once and kept in memory for fast responses
+
+## What's Next
+
+- Additional file type support (PDF, Markdown, code files)
+- Full-text search combined with semantic search
+- WebSocket support for real-time indexing progress
+- Plugin system for custom embedders
+- Distributed indexing for large file systems
+
+## License
+
+Made at NWHacks 2026.
+
+---
+
+**FileX** - The file explorer upgrade you never knew you needed. Simple, fast, and intuitive - just like Google, but for your files.
